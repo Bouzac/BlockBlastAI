@@ -1,284 +1,754 @@
+import time
+
 import gymnasium as gym
 from gymnasium import spaces
 import numpy as np
 import pygame
+from numba import njit
+
+# ============================================
+# 🧱 44 BLOCS OFFICIELS BLOCK BLAST
+# ============================================
 
 SHAPES = [
-    np.array([[1]]),  # 1x1
-    np.array([[1, 1]]),  # 2x1
-    np.array([[1], [1]]),  # 1x2
-    np.array([[1, 1, 1]]),  # 3x1
-    np.array([[1], [1], [1]]),  # 1x3
-    np.array([[1, 1], [1, 1]]),  # Carré 2x2
-    np.array([[1, 1, 1], [0, 1, 0]]),  # T
-    np.array([[1, 1], [1, 0]]),  # Petit L
-    np.array([[1, 1, 1], [0, 0, 1]]),  # L
-    np.array([[1, 1, 1, 1]]),  # Barre 4
-    np.array([[1, 1, 1], [1, 1, 1], [1, 1, 1]])
+    # ============================================
+    # BARRES 1xN et Nx1
+    # ============================================
+
+    # 0: 1x1
+    np.array([
+        [1]
+    ], dtype=np.int8),
+
+    # 1: 1x2 horizontal
+    np.array([
+        [1, 1]
+    ], dtype=np.int8),
+
+    # 2: 2x1 vertical
+    np.array([
+        [1],
+        [1]
+    ], dtype=np.int8),
+
+    # 3: 1x3 horizontal
+    np.array([
+        [1, 1, 1]
+    ], dtype=np.int8),
+
+    # 4: 3x1 vertical
+    np.array([
+        [1],
+        [1],
+        [1]
+    ], dtype=np.int8),
+
+    # 5: 1x4 horizontal
+    np.array([
+        [1, 1, 1, 1]
+    ], dtype=np.int8),
+
+    # 6: 4x1 vertical
+    np.array([
+        [1],
+        [1],
+        [1],
+        [1]
+    ], dtype=np.int8),
+
+    # 7: 1x5 horizontal
+    np.array([
+        [1, 1, 1, 1, 1]
+    ], dtype=np.int8),
+
+    # 8: 5x1 vertical
+    np.array([
+        [1],
+        [1],
+        [1],
+        [1],
+        [1]
+    ], dtype=np.int8),
+
+    # ============================================
+    # CARRÉS
+    # ============================================
+
+    # 9: 2x2
+    np.array([
+        [1, 1],
+        [1, 1]
+    ], dtype=np.int8),
+
+    # 10: 3x3
+    np.array([
+        [1, 1, 1],
+        [1, 1, 1],
+        [1, 1, 1]
+    ], dtype=np.int8),
+
+    # ============================================
+    # L - 4 rotations
+    # ============================================
+
+    # 11: L normal
+    np.array([
+        [1, 0],
+        [1, 0],
+        [1, 1]
+    ], dtype=np.int8),
+
+    # 12: L rotation 90°
+    np.array([
+        [1, 1, 1],
+        [1, 0, 0]
+    ], dtype=np.int8),
+
+    # 13: L rotation 180°
+    np.array([
+        [1, 1],
+        [0, 1],
+        [0, 1]
+    ], dtype=np.int8),
+
+    # 14: L rotation 270°
+    np.array([
+        [0, 0, 1],
+        [1, 1, 1]
+    ], dtype=np.int8),
+
+    # ============================================
+    # J (L inversé) - 4 rotations
+    # ============================================
+
+    # 15: J normal
+    np.array([
+        [0, 1],
+        [0, 1],
+        [1, 1]
+    ], dtype=np.int8),
+
+    # 16: J rotation 90°
+    np.array([
+        [1, 0, 0],
+        [1, 1, 1]
+    ], dtype=np.int8),
+
+    # 17: J rotation 180°
+    np.array([
+        [1, 1],
+        [1, 0],
+        [1, 0]
+    ], dtype=np.int8),
+
+    # 18: J rotation 270°
+    np.array([
+        [1, 1, 1],
+        [0, 0, 1]
+    ], dtype=np.int8),
+
+    # ============================================
+    # PETIT L (2x2) - 4 rotations
+    # ============================================
+
+    # 19: Petit L normal
+    np.array([
+        [1, 0],
+        [1, 1]
+    ], dtype=np.int8),
+
+    # 20: Petit L rotation 90°
+    np.array([
+        [1, 1],
+        [1, 0]
+    ], dtype=np.int8),
+
+    # 21: Petit L rotation 180°
+    np.array([
+        [1, 1],
+        [0, 1]
+    ], dtype=np.int8),
+
+    # 22: Petit L rotation 270°
+    np.array([
+        [0, 1],
+        [1, 1]
+    ], dtype=np.int8),
+
+    # ============================================
+    # T - 4 rotations
+    # ============================================
+
+    # 23: T normal (pointe en bas)
+    np.array([
+        [1, 1, 1],
+        [0, 1, 0]
+    ], dtype=np.int8),
+
+    # 24: T rotation 90° (pointe à gauche)
+    np.array([
+        [0, 1],
+        [1, 1],
+        [0, 1]
+    ], dtype=np.int8),
+
+    # 25: T rotation 180° (pointe en haut)
+    np.array([
+        [0, 1, 0],
+        [1, 1, 1]
+    ], dtype=np.int8),
+
+    # 26: T rotation 270° (pointe à droite)
+    np.array([
+        [1, 0],
+        [1, 1],
+        [1, 0]
+    ], dtype=np.int8),
+
+    # ============================================
+    # S - 2 rotations
+    # ============================================
+
+    # 27: S horizontal
+    np.array([
+        [0, 1, 1],
+        [1, 1, 0]
+    ], dtype=np.int8),
+
+    # 28: S vertical
+    np.array([
+        [1, 0],
+        [1, 1],
+        [0, 1]
+    ], dtype=np.int8),
+
+    # ============================================
+    # Z - 2 rotations
+    # ============================================
+
+    # 29: Z horizontal
+    np.array([
+        [1, 1, 0],
+        [0, 1, 1]
+    ], dtype=np.int8),
+
+    # 30: Z vertical
+    np.array([
+        [0, 1],
+        [1, 1],
+        [1, 0]
+    ], dtype=np.int8),
+
+    # ============================================
+    # GRAND L (5 cellules) - 4 rotations
+    # ============================================
+
+    # 31: Grand L normal
+    np.array([
+        [1, 0, 0],
+        [1, 0, 0],
+        [1, 1, 1]
+    ], dtype=np.int8),
+
+    # 32: Grand L rotation 90°
+    np.array([
+        [1, 1, 1],
+        [1, 0, 0],
+        [1, 0, 0]
+    ], dtype=np.int8),
+
+    # 33: Grand L rotation 180°
+    np.array([
+        [1, 1, 1],
+        [0, 0, 1],
+        [0, 0, 1]
+    ], dtype=np.int8),
+
+    # 34: Grand L rotation 270°
+    np.array([
+        [0, 0, 1],
+        [0, 0, 1],
+        [1, 1, 1]
+    ], dtype=np.int8),
+
+    # ============================================
+    # GRAND J (5 cellules) - 4 rotations
+    # ============================================
+
+    # 35: Grand J normal
+    np.array([
+        [0, 0, 1],
+        [0, 0, 1],
+        [1, 1, 1]
+    ], dtype=np.int8),
+
+    # 36: Grand J rotation 90°
+    np.array([
+        [1, 0, 0],
+        [1, 0, 0],
+        [1, 1, 1]
+    ], dtype=np.int8),
+
+    # 37: Grand J rotation 180°
+    np.array([
+        [1, 1, 1],
+        [1, 0, 0],
+        [1, 0, 0]
+    ], dtype=np.int8),
+
+    # 38: Grand J rotation 270°
+    np.array([
+        [1, 1, 1],
+        [0, 0, 1],
+        [0, 0, 1]
+    ], dtype=np.int8),
+
+    # ============================================
+    # FORMES BONUS
+    # ============================================
+
+    # 39: Croix / Plus
+    np.array([
+        [0, 1, 0],
+        [1, 1, 1],
+        [0, 1, 0]
+    ], dtype=np.int8),
+
+    # 40: Diagonale 2
+    np.array([
+        [1, 0],
+        [0, 1]
+    ], dtype=np.int8),
+
+    # 41: Diagonale 2 inversée
+    np.array([
+        [0, 1],
+        [1, 0]
+    ], dtype=np.int8),
+
+    # 42: Diagonale 3
+    np.array([
+        [1, 0, 0],
+        [0, 1, 0],
+        [0, 0, 1]
+    ], dtype=np.int8),
+
+    # 43: Diagonale 3 inversée
+    np.array([
+        [0, 0, 1],
+        [0, 1, 0],
+        [1, 0, 0]
+    ], dtype=np.int8),
 ]
 
+NUM_SHAPES = len(SHAPES)
+
+
+# ============================================
+# 🚀 NUMBA JIT - Fonctions optimisées
+# ============================================
+
+@njit(cache=True, fastmath=True)
+def _can_place_fast(grid, block, r, c, grid_size, h, w):
+    if r + h > grid_size or c + w > grid_size:
+        return False
+    for i in range(h):
+        for j in range(w):
+            if block[i, j] == 1 and grid[r + i, c + j] == 1:
+                return False
+    return True
+
+@njit(cache=True, fastmath=True)
+def _can_fit_anywhere(grid, block, grid_size, h, w):
+    for r in range(grid_size - h + 1):
+        for c in range(grid_size - w + 1):
+            can_place = True
+            for i in range(h):
+                for j in range(w):
+                    if block[i, j] == 1 and grid[r + i, c + j] == 1:
+                        can_place = False
+                        break
+                if not can_place:
+                    break
+            if can_place:
+                return True
+    return False
+
+@njit(cache=True, fastmath=True)
+def _place_block_fast(grid, block, r, c, h, w):
+    for i in range(h):
+        for j in range(w):
+            if block[i, j] == 1:
+                grid[r + i, c + j] = 1
+
+@njit(cache=True, fastmath=True)
+def _clear_lines_fast(grid, grid_size):
+    n_rows = 0
+    n_cols = 0
+
+    for r in range(grid_size):
+        full = True
+        for c in range(grid_size):
+            if grid[r, c] != 1:
+                full = False
+                break
+        if full:
+            n_rows += 1
+            for c in range(grid_size):
+                grid[r, c] = 0
+
+    for c in range(grid_size):
+        full = True
+        for r in range(grid_size):
+            if grid[r, c] != 1:
+                full = False
+                break
+        if full:
+            n_cols += 1
+            for r in range(grid_size):
+                grid[r, c] = 0
+
+    total = n_rows + n_cols
+    if total > 0:
+        return 10 * (total * (total + 1) // 2)
+    return 0
+
+
+@njit(cache=True, fastmath=True)
+def _compute_action_mask_fast(grid, hand_shapes, hand_h, hand_w, available, grid_size):
+    mask = np.zeros(3 * grid_size * grid_size, dtype=np.bool_)
+
+    for slot in range(3):
+        if not available[slot]:
+            continue
+
+        h = hand_h[slot]
+        w = hand_w[slot]
+
+        for r in range(grid_size - h + 1):
+            for c in range(grid_size - w + 1):
+                can_place = True
+                for i in range(h):
+                    for j in range(w):
+                        if hand_shapes[slot, i, j] == 1 and grid[r + i, c + j] == 1:
+                            can_place = False
+                            break
+                    if not can_place:
+                        break
+
+                if can_place:
+                    mask[slot * grid_size * grid_size + r * grid_size + c] = True
+
+    return mask
+
+
+@njit(cache=True, fastmath=True)
+def _is_deadlock_fast(grid, hand_shapes, hand_h, hand_w, available, grid_size):
+    """Vérifie si AUCUNE pièce restante ne peut être placée."""
+    for slot in range(3):
+        if not available[slot]:
+            continue
+
+        h = hand_h[slot]
+        w = hand_w[slot]
+
+        for r in range(grid_size - h + 1):
+            for c in range(grid_size - w + 1):
+                can_place = True
+                for i in range(h):
+                    for j in range(w):
+                        if hand_shapes[slot, i, j] == 1 and grid[r + i, c + j] == 1:
+                            can_place = False
+                            break
+                    if not can_place:
+                        break
+                if can_place:
+                    return False
+    return True
+
+
+@njit(cache=True, fastmath=True)
+def _count_empty_cells(grid, grid_size):
+    """Compte le nombre de cellules vides."""
+    count = 0
+    for r in range(grid_size):
+        for c in range(grid_size):
+            if grid[r, c] == 0:
+                count += 1
+    return count
+
+
+# ============================================
+# 🎮 ENVIRONNEMENT
+# ============================================
 
 class BlockBlastEnv(gym.Env):
-    metadata = {"render_modes": ["human"], "render_fps": 4}
+    metadata = {"render_modes": ["human", None], "render_fps": 60}
 
-    def __init__(self, grid_size=8, render_mode="human"):
-        super(BlockBlastEnv, self).__init__()
+    def __init__(self, grid_size=8, render_mode=None):
+        super().__init__()
         self.grid_size = grid_size
-        self.max_block_size = 4
-
+        self.max_block_size = 5  # Pour les barres 1x5 et 5x1
         self.render_mode = render_mode
         self.window = None
         self.clock = None
 
-        # --- Dimensions Pygame ---
         self.CELL_SIZE = 50
         self.GRID_MARGIN = 20
-        self.WINDOW_SIZE = (self.grid_size * self.CELL_SIZE + 2 * self.GRID_MARGIN + 200,
-                            self.grid_size * self.CELL_SIZE + 2 * self.GRID_MARGIN)
+        self.WINDOW_SIZE = (
+            grid_size * self.CELL_SIZE + 2 * self.GRID_MARGIN + 250,
+            grid_size * self.CELL_SIZE + 2 * self.GRID_MARGIN + 100
+        )
         self.GRID_POS = (self.GRID_MARGIN, self.GRID_MARGIN)
 
-        # Action Space: 3 slots * grid_size * grid_size positions
         self.action_space = spaces.Discrete(3 * grid_size * grid_size)
-
         self.observation_space = spaces.Dict({
             "grid": spaces.Box(low=0, high=1, shape=(grid_size, grid_size), dtype=np.int8),
             "hand": spaces.Box(low=0, high=1, shape=(3, self.max_block_size, self.max_block_size), dtype=np.int8)
         })
 
+        # Pré-allocation pour Numba
+        self.grid = np.zeros((grid_size, grid_size), dtype=np.int8)
+        self._hand_shapes = np.zeros((3, self.max_block_size, self.max_block_size), dtype=np.int8)
+        self._hand_h = np.zeros(3, dtype=np.int32)
+        self._hand_w = np.zeros(3, dtype=np.int32)
+        self._available = np.zeros(3, dtype=np.bool_)
+
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
-        self.grid = np.zeros((self.grid_size, self.grid_size), dtype=np.int8)
-        self.np_random = np.random.default_rng(seed)  # Initialiser le RNG correctement
+        self.grid.fill(0)
+        self.np_random = np.random.default_rng(seed)
         self._refill_hand()
         self.score = 0
         self.combo_level = 0
         self.missed_moves = 0
         return self._get_obs(), {}
 
+    def _get_valid_shape_indices(self):
+        """Retourne les indices des shapes qui peuvent être placées sur la grille actuelle."""
+        valid = []
+        for i, shape in enumerate(SHAPES):
+            h, w = shape.shape
+            if _can_fit_anywhere(self.grid, shape, self.grid_size, h, w):
+                valid.append(i)
+        return valid
+
     def _refill_hand(self):
+        """Remplit la main avec des blocs qui peuvent TOUJOURS être placés."""
         self.hand_data = []
         self.hand_obs = np.zeros((3, self.max_block_size, self.max_block_size), dtype=np.int8)
-        self.available_slots = [True, True, True]
 
         for i in range(3):
-            shape = SHAPES[self.np_random.integers(0, len(SHAPES))]
-            self.hand_data.append(shape)
-            self.hand_obs[i] = self._get_padded_block(shape)
+            valid_indices = self._get_valid_shape_indices()
 
-    def _get_padded_block(self, block):
-        padded = np.zeros((self.max_block_size, self.max_block_size), dtype=np.int8)
-        h, w = block.shape
-        padded[:h, :w] = block
-        return padded
+            if len(valid_indices) == 0:
+                # Fallback:  bloc 1x1 (rentre toujours sauf grille 100% pleine)
+                valid_indices = [0]
+
+            shape_idx = self.np_random.choice(valid_indices)
+            shape = SHAPES[shape_idx].copy()
+
+            self.hand_data.append(shape)
+            h, w = shape.shape
+            self.hand_obs[i, :h, :w] = shape
+
+            self._hand_shapes[i].fill(0)
+            self._hand_shapes[i, :h, : w] = shape
+            self._hand_h[i] = h
+            self._hand_w[i] = w
+            self._available[i] = True
 
     def _get_obs(self):
         return {"grid": self.grid.copy(), "hand": self.hand_obs.copy()}
 
-    def _can_place(self, block, r, c):
-        h, w = block.shape
-        if r + h > self.grid_size or c + w > self.grid_size:
-            return False
-
-        grid_slice = self.grid[r:r + h, c:c + w]
-        if np.any((grid_slice == 1) & (block == 1)):
-            return False
-        return True
-
-    def _place_block(self, block, r, c):
-        h, w = block.shape
-        self.grid[r:r + h, c:c + w] += block
-
     def step(self, action):
-        slot_idx = action // (self.grid_size * self.grid_size)
-        remainder = action % (self.grid_size * self.grid_size)
-        x = remainder // self.grid_size
-        y = remainder % self.grid_size
+        gs = self.grid_size
+        slot = action // (gs * gs)
+        pos = action % (gs * gs)
+        r, c = pos // gs, pos % gs
 
-        reward = 0
+        if not self._available[slot]:
+            return self._get_obs(), -10, False, False, {}
+
+        h, w = self._hand_h[slot], self._hand_w[slot]
+        block = self._hand_shapes[slot, : h, :w]
+
+        # Placement invalide
+        if not _can_place_fast(self.grid, block, r, c, gs, h, w):
+            return self._get_obs(), -5, False, False, {}
+
+        _place_block_fast(self.grid, block, r, c, h, w)
+
+        self._available[slot] = False
+        self.hand_obs[slot].fill(0)
+
+        reward = float(np.sum(block))
+
+        # Clear des lignes
+        lines_score = _clear_lines_fast(self.grid, gs)
+        if lines_score > 0:
+            self.missed_moves = 0
+            self.combo_level += 1
+            reward += lines_score * (1 + 0.2 * self.combo_level)
+        else:
+            self.missed_moves += 1
+            if self.missed_moves >= 3:
+                self.combo_level = 0
+
+        if not np.any(self._available):
+            self._refill_hand()
+            reward += 5
+
         terminated = False
 
-        # Cas 1: Slot vide (L'IA essaie de jouer une pièce déjà jouée)
-        if not self.available_slots[slot_idx]:
-            return self._get_obs(), -10, True, False, {}  # Punition sévère + Fin immédiate pour forcer l'apprentissage
-
-        block = self.hand_data[slot_idx]
-
-        # Cas 2: Placement
-        if self._can_place(block, x, y):
-            self._place_block(block, x, y)
-
-            # Mise à jour état
-            self.available_slots[slot_idx] = False
-            self.hand_obs[slot_idx] = 0  # Visuellement vide
-
-            # Récompense de base (nombre de blocs posés)
-            reward += np.sum(block)
-
-            # Gestion des lignes
-            lines_score = self._clear_lines()
-            if lines_score > 0:
-                self.missed_moves = 0
-                self.combo_level += 1
-                reward += lines_score * (1 + 0.2 * self.combo_level)  # Bonus combo
-            else:
-                self.missed_moves += 1
-                if self.missed_moves >= 3:
-                    self.combo_level = 0  # Reset combo si trop d'attente
-
-            # Refill si main vide
-            if not any(self.available_slots):
-                self._refill_hand()
-                reward += 5  # Petit bonus pour avoir vidé la main
-
-            # Vérification GAME OVER RÉEL (Si plus aucun coup n'est possible)
-            if self._is_deadlock():
-                terminated = True
-                reward -= 10  # Pénalité de défaite
-
-        else:
-            # Cas 3: Coup invalide (Collision ou Hors Limite)
-            reward = -5  # Punition
-            terminated = False
+        if _is_deadlock_fast(self.grid, self._hand_shapes, self._hand_h,
+                             self._hand_w, self._available, gs):
+            # Plus aucun coup possible = GAME OVER
+            terminated = True
+            reward -= 50  # Grosse pénalité
 
         self.score += reward
-
         return self._get_obs(), reward, terminated, False, {}
 
-    def _is_deadlock(self):
-        """Vérifie si AUCUNE pièce restante ne peut être placée."""
-        for idx, is_avail in enumerate(self.available_slots):
-            if is_avail:
-                block = self.hand_data[idx]
-                # Test brute-force rapide: est-ce que ça rentre quelque part ?
-                for r in range(self.grid_size):
-                    for c in range(self.grid_size):
-                        if self._can_place(block, r, c):
-                            return False  # Il reste au moins un coup
-        return True
-
-    def _clear_lines(self):
-        rows = np.all(self.grid == 1, axis=1)
-        cols = np.all(self.grid == 1, axis=0)
-
-        n_rows = np.sum(rows)
-        n_cols = np.sum(cols)
-
-        if n_rows > 0: self.grid[rows, :] = 0
-        if n_cols > 0: self.grid[:, cols] = 0
-
-        total_lines = n_rows + n_cols
-        if total_lines > 0:
-            return 10 * (total_lines * (total_lines + 1) // 2)
-        return 0
-
     def action_masks(self):
-        # USE self.action_space.n if using Discrete space
-        # Size = 192 (3 slots * 8 rows * 8 cols)
-        mask = np.zeros(self.action_space.n, dtype=bool)
-
-        for slot_idx in range(3):
-            if not self.available_slots[slot_idx]:
-                continue
-
-            block = self.hand_data[slot_idx]
-
-            # Optimize: Local variable access is faster in Python loops
-            grid_size = self.grid_size
-
-            for r in range(grid_size):
-                for c in range(grid_size):
-                    if self._can_place(block, r, c):
-                        # Flat index calculation: (Slot * 64) + (Row * 8) + Col
-                        action_idx = (slot_idx * grid_size * grid_size) + (r * grid_size) + c
-                        mask[action_idx] = True
-
-        return mask
+        return _compute_action_mask_fast(
+            self.grid, self._hand_shapes, self._hand_h,
+            self._hand_w, self._available, self.grid_size
+        )
 
     def render(self):
-        if self.render_mode == "human":
-            if self.window is None:
-                pygame.init()
-                pygame.display.init()
-                self.window = pygame.display.set_mode(self.WINDOW_SIZE)
-                pygame.display.set_caption("Block Blast RL")
+        if self.render_mode != "human":
+            return
 
-            if self.clock is None:
-                self.clock = pygame.time.Clock()
+        if self.window is None:
+            pygame.init()
+            self.window = pygame.display.set_mode(self.WINDOW_SIZE)
+            pygame.display.set_caption("Block Blast RL - 44 Shapes")
+            self.clock = pygame.time.Clock()
 
-            canvas = pygame.Surface(self.WINDOW_SIZE)
-            canvas.fill((255, 255, 255))  # Fond blanc
+        canvas = pygame.Surface(self.WINDOW_SIZE)
+        canvas.fill((30, 30, 40))  # Fond sombre
 
-            # 1. Dessin de la Grille (Board)
-            for r in range(self.grid_size):
-                for c in range(self.grid_size):
-                    rect = pygame.Rect(
-                        self.GRID_POS[0] + c * self.CELL_SIZE,
-                        self.GRID_POS[1] + r * self.CELL_SIZE,
-                        self.CELL_SIZE,
-                        self.CELL_SIZE
-                    )
-
-                    # Remplir la cellule
-                    if self.grid[r, c] == 1:
-                        # Bloc plein (couleur arbitraire)
-                        pygame.draw.rect(canvas, (50, 50, 200), rect)
-                    else:
-                        # Cellule vide (gris clair)
-                        pygame.draw.rect(canvas, (200, 200, 200), rect, 1)  # Bordure
-
-            # 2. Dessin de la Main (Hand) et du Score
-            font = pygame.font.Font(None, 30)
-            text_x_start = self.GRID_POS[0] + self.grid_size * self.CELL_SIZE + 50
-            current_y = 50
-
-            # Affichage du Score
-            score_text = font.render(f"Score: {self.score}", True, (0, 0, 0))
-            canvas.blit(score_text, (text_x_start, current_y))
-            current_y += 40
-
-            # Affichage du Combo
-            combo_text = font.render(f"Combo: {self.combo_level}", True, (200, 0, 0))
-            canvas.blit(combo_text, (text_x_start, current_y))
-            current_y += 60
-
-            # Dessin des pièces disponibles dans la main
-            for i in range(3):
-                current_y += 10
-                if self.available_slots[i]:
-                    shape = self.hand_data[i]
-                    h, w = shape.shape
-
-                    # Étiquette de la pièce
-                    label = font.render(f"Pièce {i + 1}:", True, (0, 0, 0))
-                    canvas.blit(label, (text_x_start, current_y))
-                    current_y += 20
-
-                    # Dessin du bloc
-                    for r in range(h):
-                        for c in range(w):
-                            if shape[r, c] == 1:
-                                block_rect = pygame.Rect(
-                                    text_x_start + c * 15,
-                                    current_y + r * 15,
-                                    15, 15
-                                )
-                                pygame.draw.rect(canvas, (50, 200, 50), block_rect)  # Couleur différente pour la main
-
-                    current_y += h * 15 + 20
+        # Grille
+        for r in range(self.grid_size):
+            for c in range(self.grid_size):
+                rect = pygame.Rect(
+                    self.GRID_POS[0] + c * self.CELL_SIZE,
+                    self.GRID_POS[1] + r * self.CELL_SIZE,
+                    self.CELL_SIZE - 2,
+                    self.CELL_SIZE - 2
+                )
+                if self.grid[r, c] == 1:
+                    pygame.draw.rect(canvas, (70, 130, 220), rect)  # Bleu
+                    pygame.draw.rect(canvas, (100, 160, 255), rect, 2)  # Bordure claire
                 else:
-                    empty_text = font.render(f"Pièce {i + 1}: JOUÉE", True, (150, 150, 150))
-                    canvas.blit(empty_text, (text_x_start, current_y))
-                    current_y += 40
+                    pygame.draw.rect(canvas, (50, 50, 60), rect)  # Gris foncé
+                    pygame.draw.rect(canvas, (70, 70, 80), rect, 1)  # Bordure
 
-            # Copier le canvas sur la fenêtre
-            self.window.blit(canvas, canvas.get_rect())
-            pygame.event.pump()
-            pygame.display.flip()
-            self.clock.tick(self.metadata["render_fps"])
+        # Panel latéral
+        panel_x = self.GRID_POS[0] + self.grid_size * self.CELL_SIZE + 30
+
+        font_large = pygame.font.Font(None, 40)
+        font_medium = pygame.font.Font(None, 30)
+
+        # Score
+        score_text = font_large.render("Score", True, (255, 255, 255))
+        canvas.blit(score_text, (panel_x, 20))
+        score_value = font_large.render(f"{int(self.score)}", True, (100, 255, 100))
+        canvas.blit(score_value, (panel_x, 55))
+
+        # Combo
+        combo_color = (255, 200, 100) if self.combo_level > 0 else (150, 150, 150)
+        combo_text = font_medium.render(f"Combo:  x{self.combo_level}", True, combo_color)
+        canvas.blit(combo_text, (panel_x, 100))
+
+        # Cellules vides
+        empty_cells = _count_empty_cells(self.grid, self.grid_size)
+        fill_percent = 100 * (1 - empty_cells / (self.grid_size ** 2))
+        fill_color = (100, 255, 100) if fill_percent < 50 else (255, 200, 100) if fill_percent < 75 else (255, 100, 100)
+        fill_text = font_medium.render(f"Fill: {fill_percent:.0f}%", True, fill_color)
+        canvas.blit(fill_text, (panel_x, 130))
+
+        # Pièces dans la main
+        y_offset = 180
+        for i in range(3):
+            label = font_medium.render(f"Slot {i + 1}:", True, (200, 200, 200))
+            canvas.blit(label, (panel_x, y_offset))
+            y_offset += 25
+
+            if self._available[i]:
+                shape = self.hand_data[i]
+                h, w = shape.shape
+
+                block_size = 18
+                for row in range(h):
+                    for col in range(w):
+                        if shape[row, col] == 1:
+                            block_rect = pygame.Rect(
+                                panel_x + col * block_size,
+                                y_offset + row * block_size,
+                                block_size - 2,
+                                block_size - 2
+                            )
+                            pygame.draw.rect(canvas, (80, 200, 120), block_rect)  # Vert
+                            pygame.draw.rect(canvas, (120, 255, 160), block_rect, 1)
+
+                y_offset += h * block_size + 15
+            else:
+                played_text = font_medium.render("PLAYED", True, (100, 100, 100))
+                canvas.blit(played_text, (panel_x, y_offset))
+                y_offset += 40
+
+        # Stats en bas
+        stats_y = self.WINDOW_SIZE[1] - 30
+        stats_text = font_medium.render(f"Shapes: {NUM_SHAPES} | Grid: {self.grid_size}x{self.grid_size}", True,
+                                        (150, 150, 150))
+        canvas.blit(stats_text, (20, stats_y))
+
+        self.window.blit(canvas, (0, 0))
+        pygame.display.flip()
+        self.clock.tick(self.metadata["render_fps"])
 
     def close(self):
-        if self.window is not None:
-            pygame.display.quit()
+        if self.window:
             pygame.quit()
             self.window = None
-            self.clock = None
+
+
+# ============================================
+# 🧪 TEST
+# ============================================
+
+if __name__ == "__main__":
+    print(f"📦 Nombre de shapes: {NUM_SHAPES}")
+
+    print("\n🎮 Test de l'environnement...")
+    env = BlockBlastEnv(render_mode="human")
+    obs, _ = env.reset()
+
+    total_games = 0
+    total_score = 0
+
+    while total_games < 5:
+        mask = env.action_masks()
+        valid_actions = np.where(mask)[0]
+
+        if len(valid_actions) > 0:
+            action = np.random.choice(valid_actions)
+            obs, reward, done, _, _ = env.step(action)
+            env.render()
+            pygame.time.wait(50)
+
+            if done:
+                total_games += 1
+                total_score += env.score
+                print(f"🎮 Game {total_games}:  Score = {env.score:.0f}")
+                obs, _ = env.reset()
+        else:
+            # Ne devrait pas arriver si deadlock fonctionne
+            print("⚠️ Pas d'actions valides mais pas de done!")
+            break
+
+    print(f"\n📊 Score moyen: {total_score / total_games:.0f}")
+    env.close()
+    print("✅ Test terminé!")
