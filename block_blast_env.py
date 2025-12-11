@@ -478,6 +478,163 @@ def _count_empty_cells(grid, grid_size):
     return count
 
 
+@njit(cache=True, fastmath=True)
+def _count_holes(grid, grid_size):
+    """Compte les cellules vides qui sont inaccessibles (bloquées au-dessus)."""
+    holes = 0
+    for c in range(grid_size):
+        found_block = False
+        for r in range(grid_size):
+            if grid[r, c] == 1:
+                found_block = True
+            elif found_block and grid[r, c] == 0:
+                holes += 1
+    return holes
+
+
+@njit(cache=True, fastmath=True)
+def _count_near_complete_lines(grid, grid_size, threshold=6):
+    """Compte les lignes/colonnes avec au moins 'threshold' cellules remplies."""
+    count = 0
+    
+    # Lignes
+    for r in range(grid_size):
+        filled = 0
+        for c in range(grid_size):
+            if grid[r, c] == 1:
+                filled += 1
+        if filled >= threshold:
+            count += 1
+    
+    # Colonnes
+    for c in range(grid_size):
+        filled = 0
+        for r in range(grid_size):
+            if grid[r, c] == 1:
+                filled += 1
+        if filled >= threshold:
+            count += 1
+    
+    return count
+
+
+@njit(cache=True, fastmath=True)
+def _calculate_surface_roughness(grid, grid_size):
+    """Calcule la rugosité de la surface (variation de hauteur entre colonnes)."""
+    heights = np.zeros(grid_size, dtype=np.int32)
+    
+    for c in range(grid_size):
+        height = 0
+        for r in range(grid_size - 1, -1, -1):
+            if grid[r, c] == 1:
+                height = grid_size - r
+                break
+        heights[c] = height
+    
+    roughness = 0
+    for i in range(grid_size - 1):
+        roughness += abs(heights[i] - heights[i + 1])
+    
+    return roughness
+
+
+@njit(cache=True, fastmath=True)
+def _calculate_row_fill_percentages(grid, grid_size):
+    """Calcule le pourcentage de remplissage de chaque ligne."""
+    percentages = np.zeros(grid_size, dtype=np.float32)
+    for r in range(grid_size):
+        filled = 0
+        for c in range(grid_size):
+            if grid[r, c] == 1:
+                filled += 1
+        percentages[r] = filled / grid_size
+    return percentages
+
+
+@njit(cache=True, fastmath=True)
+def _calculate_col_fill_percentages(grid, grid_size):
+    """Calcule le pourcentage de remplissage de chaque colonne."""
+    percentages = np.zeros(grid_size, dtype=np.float32)
+    for c in range(grid_size):
+        filled = 0
+        for r in range(grid_size):
+            if grid[r, c] == 1:
+                filled += 1
+        percentages[c] = filled / grid_size
+    return percentages
+
+
+@njit(cache=True, fastmath=True)
+def _calculate_fragmentation(grid, grid_size):
+    """Mesure la fragmentation: nombre de transitions 0->1 ou 1->0."""
+    transitions = 0
+    
+    # Transitions horizontales
+    for r in range(grid_size):
+        for c in range(grid_size - 1):
+            if grid[r, c] != grid[r, c + 1]:
+                transitions += 1
+    
+    # Transitions verticales
+    for c in range(grid_size):
+        for r in range(grid_size - 1):
+            if grid[r, c] != grid[r + 1, c]:
+                transitions += 1
+    
+    return transitions
+
+
+@njit(cache=True, fastmath=True)
+def _compute_hole_channel(grid, grid_size):
+    """Calcule un canal indiquant les trous (cellules vides bloquées par le haut)."""
+    hole_channel = np.zeros((grid_size, grid_size), dtype=np.float32)
+    for c in range(grid_size):
+        found_block = False
+        for r in range(grid_size):
+            if grid[r, c] == 1:
+                found_block = True
+            elif found_block and grid[r, c] == 0:
+                hole_channel[r, c] = 1.0
+    return hole_channel
+
+
+@njit(cache=True, fastmath=True)
+def _compute_valid_placement_channel(grid, hand_shapes, hand_h, hand_w, available, grid_size):
+    """Calcule un canal indiquant les positions valides pour la première pièce disponible."""
+    placement_channel = np.zeros((grid_size, grid_size), dtype=np.float32)
+    
+    # Trouve la première pièce disponible
+    for slot in range(3):
+        if not available[slot]:
+            continue
+        
+        h = hand_h[slot]
+        w = hand_w[slot]
+        
+        # Marque toutes les positions valides
+        for r in range(grid_size - h + 1):
+            for c in range(grid_size - w + 1):
+                can_place = True
+                for i in range(h):
+                    for j in range(w):
+                        if hand_shapes[slot, i, j] == 1 and grid[r + i, c + j] == 1:
+                            can_place = False
+                            break
+                    if not can_place:
+                        break
+                
+                if can_place:
+                    # Marque la zone de placement
+                    for i in range(h):
+                        for j in range(w):
+                            if hand_shapes[slot, i, j] == 1:
+                                placement_channel[r + i, c + j] = 1.0
+        
+        break  # Seulement la première pièce
+    
+    return placement_channel
+
+
 # ============================================
 # 🎮 ENVIRONNEMENT
 # ============================================
@@ -502,9 +659,15 @@ class BlockBlastEnv(gym.Env):
         self.GRID_POS = (self.GRID_MARGIN, self.GRID_MARGIN)
 
         self.action_space = spaces.Discrete(3 * grid_size * grid_size)
+        # Observation avec canaux multiples:
+        # Canal 0: grille de base (0/1)
+        # Canal 1: pourcentages de remplissage des lignes (répété pour chaque colonne)
+        # Canal 2: pourcentages de remplissage des colonnes (répété pour chaque ligne)
+        # Canal 3: détection de trous (0/1)
+        # Canal 4: positions de placement valides pour pièce courante
         self.observation_space = spaces.Dict({
-            "grid": spaces.Box(low=0, high=1, shape=(grid_size, grid_size), dtype=np.int8),
-            "hand": spaces.Box(low=0, high=1, shape=(3, self.max_block_size, self.max_block_size), dtype=np.int8)
+            "grid": spaces.Box(low=0, high=1, shape=(5, grid_size, grid_size), dtype=np.float32),
+            "hand": spaces.Box(low=0, high=1, shape=(3, self.max_block_size, self.max_block_size), dtype=np.float32)
         })
 
         # Pré-allocation pour Numba
@@ -513,6 +676,9 @@ class BlockBlastEnv(gym.Env):
         self._hand_h = np.zeros(3, dtype=np.int32)
         self._hand_w = np.zeros(3, dtype=np.int32)
         self._available = np.zeros(3, dtype=np.bool_)
+        
+        # Pour l'observation multi-canaux
+        self._obs_grid = np.zeros((5, grid_size, grid_size), dtype=np.float32)
 
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
@@ -522,6 +688,7 @@ class BlockBlastEnv(gym.Env):
         self.score = 0
         self.combo_level = 0
         self.missed_moves = 0
+        self.step_count = 0
         return self._get_obs(), {}
 
     def _get_valid_shape_indices(self):
@@ -534,32 +701,65 @@ class BlockBlastEnv(gym.Env):
         return valid
 
     def _refill_hand(self):
-        """Remplit la main avec des blocs qui peuvent TOUJOURS être placés."""
+        """Remplit la main avec des blocs: 80% aléatoires, 20% garantis valides."""
         self.hand_data = []
-        self.hand_obs = np.zeros((3, self.max_block_size, self.max_block_size), dtype=np.int8)
+        self.hand_obs = np.zeros((3, self.max_block_size, self.max_block_size), dtype=np.float32)
 
         for i in range(3):
-            valid_indices = self._get_valid_shape_indices()
-
-            if len(valid_indices) == 0:
-                # Fallback:  bloc 1x1 (rentre toujours sauf grille 100% pleine)
-                valid_indices = [0]
-
-            shape_idx = self.np_random.choice(valid_indices)
+            # 80% du temps: sélection complètement aléatoire
+            # 20% du temps: sélection parmi les pièces valides
+            if self.np_random.random() < 0.8:
+                # Sélection aléatoire parmi toutes les formes
+                shape_idx = self.np_random.integers(0, NUM_SHAPES)
+            else:
+                # Sélection parmi les formes valides
+                valid_indices = self._get_valid_shape_indices()
+                
+                if len(valid_indices) == 0:
+                    # Fallback: bloc 1x1 (rentre toujours sauf grille 100% pleine)
+                    valid_indices = [0]
+                
+                shape_idx = self.np_random.choice(valid_indices)
+            
             shape = SHAPES[shape_idx].copy()
 
             self.hand_data.append(shape)
             h, w = shape.shape
-            self.hand_obs[i, :h, :w] = shape
+            self.hand_obs[i, :h, :w] = shape.astype(np.float32)
 
             self._hand_shapes[i].fill(0)
-            self._hand_shapes[i, :h, : w] = shape
+            self._hand_shapes[i, :h, :w] = shape
             self._hand_h[i] = h
             self._hand_w[i] = w
             self._available[i] = True
 
     def _get_obs(self):
-        return {"grid": self.grid.copy(), "hand": self.hand_obs.copy()}
+        # Canal 0: grille de base
+        self._obs_grid[0] = self.grid.astype(np.float32)
+        
+        # Canal 1: pourcentages de remplissage des lignes (répété pour chaque colonne)
+        row_fill = _calculate_row_fill_percentages(self.grid, self.grid_size)
+        for c in range(self.grid_size):
+            self._obs_grid[1, :, c] = row_fill
+        
+        # Canal 2: pourcentages de remplissage des colonnes (répété pour chaque ligne)
+        col_fill = _calculate_col_fill_percentages(self.grid, self.grid_size)
+        for r in range(self.grid_size):
+            self._obs_grid[2, r, :] = col_fill
+        
+        # Canal 3: détection de trous
+        self._obs_grid[3] = _compute_hole_channel(self.grid, self.grid_size)
+        
+        # Canal 4: positions de placement valides pour la première pièce
+        self._obs_grid[4] = _compute_valid_placement_channel(
+            self.grid, self._hand_shapes, self._hand_h, 
+            self._hand_w, self._available, self.grid_size
+        )
+        
+        return {
+            "grid": self._obs_grid.copy(), 
+            "hand": self.hand_obs.astype(np.float32).copy()
+        }
 
     def step(self, action):
         gs = self.grid_size
@@ -577,14 +777,26 @@ class BlockBlastEnv(gym.Env):
         if not _can_place_fast(self.grid, block, r, c, gs, h, w):
             return self._get_obs(), -5, False, False, {}
 
+        # Métriques AVANT placement
+        holes_before = _count_holes(self.grid, gs)
+        near_complete_before = _count_near_complete_lines(self.grid, gs, 6)
+        fragmentation_before = _calculate_fragmentation(self.grid, gs)
+        
         _place_block_fast(self.grid, block, r, c, h, w)
 
         self._available[slot] = False
         self.hand_obs[slot].fill(0)
 
-        reward = float(np.sum(block))
-
-        # Clear des lignes
+        # NOUVEAU SYSTÈME DE RÉCOMPENSES
+        reward = 0.0
+        
+        # 1. Petite récompense de base pour placer un bloc (réduite)
+        reward += 0.5
+        
+        # 2. Bonus de survie (encourage les parties longues)
+        reward += 0.1
+        
+        # 3. Clear des lignes (récompense importante)
         lines_score = _clear_lines_fast(self.grid, gs)
         if lines_score > 0:
             self.missed_moves = 0
@@ -594,18 +806,59 @@ class BlockBlastEnv(gym.Env):
             self.missed_moves += 1
             if self.missed_moves >= 3:
                 self.combo_level = 0
+        
+        # 4. Métriques APRÈS placement
+        holes_after = _count_holes(self.grid, gs)
+        near_complete_after = _count_near_complete_lines(self.grid, gs, 6)
+        fragmentation_after = _calculate_fragmentation(self.grid, gs)
+        roughness = _calculate_surface_roughness(self.grid, gs)
+        
+        # 5. Pénalité pour création de trous
+        holes_created = holes_after - holes_before
+        if holes_created > 0:
+            reward -= 1.0 * holes_created
+        
+        # 6. Bonus pour lignes presque complètes
+        near_complete_gained = near_complete_after - near_complete_before
+        if near_complete_gained > 0:
+            reward += 0.5 * near_complete_gained
+        
+        # 7. Pénalité pour augmentation de la fragmentation
+        fragmentation_increase = fragmentation_after - fragmentation_before
+        if fragmentation_increase > 5:  # Seuil pour éviter pénalités trop fréquentes
+            reward -= 0.1 * (fragmentation_increase - 5)
+        
+        # 8. Pénalité pour surface trop rugueuse (encourage l'aplatissement)
+        if roughness > 10:
+            reward -= 0.05 * (roughness - 10)
+        
+        # 9. Bonus pour grille "ouverte" (peu remplie)
+        empty_cells = _count_empty_cells(self.grid, gs)
+        fill_ratio = 1.0 - (empty_cells / (gs * gs))
+        if fill_ratio < 0.5:
+            reward += 0.3  # Bonus pour garder la grille dégagée
+        elif fill_ratio > 0.75:
+            reward -= 0.5  # Pénalité pour grille trop pleine
 
         if not np.any(self._available):
             self._refill_hand()
-            reward += 5
+            # Petite récompense pour avoir utilisé toutes les pièces
+            reward += 2.0
 
         terminated = False
+        
+        # Compteur d'étapes pour calcul de pénalité de game over
+        if not hasattr(self, 'step_count'):
+            self.step_count = 0
+        self.step_count += 1
 
         if _is_deadlock_fast(self.grid, self._hand_shapes, self._hand_h,
                              self._hand_w, self._available, gs):
-            # Plus aucun coup possible = GAME OVER
+            # GAME OVER: pénalité basée sur combien tôt le jeu se termine
             terminated = True
-            reward -= 50  # Grosse pénalité
+            # Pénalité plus forte si le jeu se termine tôt
+            early_game_penalty = max(0, 200 - self.step_count)
+            reward -= (200 + early_game_penalty)
 
         self.score += reward
         return self._get_obs(), reward, terminated, False, {}
